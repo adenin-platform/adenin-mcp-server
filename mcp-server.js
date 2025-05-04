@@ -95,8 +95,6 @@ const server = new McpServer({
   }
 });
 
-// Track registered tools for debugging
-const registeredTools = [];
 
 // Cache for schemas
 const schemaCache = new Map();
@@ -162,17 +160,18 @@ async function callEndpoint(endpointId, args) {  try {
   }
 }
 
-// Dynamically register tools for each endpoint
-const setupTools = async () => {
+// Build tools array based on schema retrieval
+const buildToolsArray = async () => {
+  const tools = [];
+  
   for (const endpointId of endpointIds) {
     try {
-      console.error(`Setting up tool for ${endpointId}...`);
+      console.error(`Retrieving schema for ${endpointId}...`);
       
       // Fetch the schema for this endpoint
       const schema = await fetchSchema(endpointId);
       
       // Create a zod schema from the JSON schema
-      // This is still necessary to convert the JSON Schema format to Zod objects
       const paramSchema = {};
       
       if (schema.properties) {
@@ -259,13 +258,38 @@ const setupTools = async () => {
           }
         }
       }
-        // Register a tool for this endpoint
+
+      // Add tool definition to array
+      tools.push({
+        id: endpointId,
+        paramSchema: paramSchema,
+        description: schema.description || `Tool for ${endpointId}`,
+        schema: schema
+      });
+      
+      console.error(`✅ Successfully prepared tool definition for ${endpointId}`);
+    } catch (error) {
+      console.error(`Failed to prepare tool definition for ${endpointId}:`, error);
+    }
+  }
+  
+  return tools;
+};
+
+// Register tools with the server
+const registerTools = (toolsArray) => {
+  for (const tool of toolsArray) {
+    try {
+      console.error(`Registering tool for ${tool.id}...`);
+      
+      // Register the tool with the server
       server.tool(
-        endpointId,
-        paramSchema,
+        tool.id,
+        tool.description,
+        tool.paramSchema,
         async (args) => {
           try {
-            const result = await callEndpoint(endpointId, args);
+            const result = await callEndpoint(tool.id, args);
             return {
               content: [{ 
                 type: "text", 
@@ -281,39 +305,32 @@ const setupTools = async () => {
               isError: true
             };
           }
-        },
-        {
-          description: schema.description || `Tool for ${endpointId}`
         }
       );
       
-      // Store tool information for debugging
-      registeredTools.push({
-        id: endpointId,
-        description: schema.description || `Tool for ${endpointId}`,
-        schema: schema
-      });
-      
-      console.error(`✅ Successfully registered tool for ${endpointId}`);
+      console.error(`✅ Successfully registered tool for ${tool.id}`);
+       if (isDebugMode()) console.error("schema", tool.schema);
     } catch (error) {
-      console.error(`Failed to set up tool for ${endpointId}:`, error);
+      console.error(`Failed to register tool for ${tool.id}:`, error);
     }
   }
 };
 
+// Replace the original setupTools function
+const setupTools = async () => {
+  const toolsArray = await buildToolsArray();
+  registerTools(toolsArray);
+};
+
 // Set up the tools and start the server
-const start = async () => {  try {
+const start = async () => {
+  try {
     // Set up all tools
     await setupTools();
       // Start the server with stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
-      // If in debug mode, display the list of registered tools and their details
-    if (isDebugMode()) {
-      console.error("\n📋 Registered Tools:");
-      console.error(JSON.stringify(registeredTools, null, 2));
-      console.error("");
-    }
+
     
     // Display debug mode status
     console.error(`Debug mode: ${isDebugMode() ? 'ENABLED' : 'DISABLED'}`);
@@ -338,8 +355,34 @@ const start = async () => {  try {
 
   } catch (error) {
     console.error("Failed to start server:", error);
-    process.exit(1);
+    // Log but don't exit to prevent restarts
+    console.error("Server encountered an error but will attempt to continue");
   }
 };
+
+// Add a global error handler
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  // Don't exit the process
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process
+});
+
+process.on('exit', (code) => {
+  console.error(`Process is about to exit with code: ${code}`);
+});
+
+process.on('SIGINT', () => {
+  console.error('Received SIGINT signal (likely Ctrl+C)');
+  process.exit(130);
+});
+
+process.on('SIGTERM', () => {
+  console.error('Received SIGTERM signal (likely process being terminated)');
+  process.exit(143);
+});
 
 start();
