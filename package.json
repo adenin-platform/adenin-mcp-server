@@ -1,0 +1,11 @@
+{
+  "name": "adenin-mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "dotenv": "^16.5.0",
+    "node-fetch": "^3.3.2",
+    "zod": "latest"
+  }
+}
