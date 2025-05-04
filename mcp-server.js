@@ -212,6 +212,9 @@ const buildToolsArray = async () => {
           } else if (prop.type === "boolean") {
             paramSchema[key] = z.boolean();
           } else if (prop.type === "array") {
+
+             continue;  // *todo* define/test array types
+
             // Handle arrays with improved item type handling
             if (prop.items && prop.items.type === "string") {
               paramSchema[key] = z.array(z.string());
@@ -253,11 +256,12 @@ const buildToolsArray = async () => {
           }
           
           // Handle required fields
-          if (schema.required && !schema.required.includes(key)) {
-            paramSchema[key] = paramSchema[key].optional();
+          if ((schema.required && !schema.required.includes(key)) || schema.required === undefined) {
+            paramSchema[key] = z.optional(paramSchema[key]);
           }
         }
       }
+
 
       // Add tool definition to array
       tools.push({
