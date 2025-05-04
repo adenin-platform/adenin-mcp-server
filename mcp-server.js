@@ -59,7 +59,7 @@ if (endpointIds.length === 0 || !bearerToken) {
   console.error("Error: Missing required parameters (endpoints or token)");
   console.error("Usage: node mcp-server.js --endpoints=endpoint1,endpoint2 --token=your_bearer_token [--host=hostname]");
   console.error("Or create a .env file with MCP_ENDPOINTS, MCP_TOKEN, and optionally MCP_HOST");
-  
+
   // Create a sample .env file if it doesn't exist
   const envPath = join(__dirname, '.env');
   if (!fs.existsSync(envPath)) {
@@ -80,7 +80,7 @@ MCP_TOKEN=your_bearer_token
       console.error("Failed to create sample .env file:", error.message);
     }
   }
-  
+
   process.exit(1);
 }
 
@@ -118,10 +118,10 @@ async function fetchSchema(endpointId) {
     }
 
     const responseData = await response.json();
-    
+
     // Extract the schema from the Data property of the response
     const schema = responseData.Data || responseData;
-    
+
     schemaCache.set(endpointId, schema);
     return schema;
   } catch (error) {
@@ -131,8 +131,10 @@ async function fetchSchema(endpointId) {
 }
 
 // Helper function to call an endpoint
-async function callEndpoint(endpointId, args) {  try {
-    const response = await fetch(`https://${host}/api/mcp/proxy/${endpointId}`, {
+async function callEndpoint(endpointId, args) {
+  let endpoint = endpointId.replace("___", "/"); // Replace ___ with / for the actual endpoint ID
+  try {
+    const response = await fetch(`https://${host}/api/mcp/proxy/${endpoint}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${bearerToken}`,
@@ -147,7 +149,7 @@ async function callEndpoint(endpointId, args) {  try {
     }
 
     const jsonResponse = await response.json();
-    
+
     // Log JSON responses when debug mode is enabled
     if (isDebugMode()) {
       console.error(`Response from ${endpointId}:`, JSON.stringify(jsonResponse, null, 2));
@@ -163,23 +165,23 @@ async function callEndpoint(endpointId, args) {  try {
 // Build tools array based on schema retrieval
 const buildToolsArray = async () => {
   const tools = [];
-  
+
   for (const endpointId of endpointIds) {
     try {
       console.error(`Retrieving schema for ${endpointId}...`);
-      
+
       // Fetch the schema for this endpoint
       const schema = await fetchSchema(endpointId);
-      
+
       // Create a zod schema from the JSON schema
       const paramSchema = {};
-      
+
       if (schema.properties) {
         for (const [key, prop] of Object.entries(schema.properties)) {
           // Basic type conversion from JSON schema to Zod
           if (prop.type === "string") {
             let stringSchema = z.string();
-            
+
             // Handle string formats if specified
             if (prop.format === "email") {
               stringSchema = z.string().email();
@@ -195,11 +197,11 @@ const buildToolsArray = async () => {
                 console.error(`Invalid regex pattern for ${key}:`, error.message);
               }
             }
-            
+
             paramSchema[key] = stringSchema;
           } else if (prop.type === "number" || prop.type === "integer") {
             let numberSchema = z.number();
-            
+
             // Add min/max constraints if specified
             if (prop.minimum !== undefined) {
               numberSchema = numberSchema.min(prop.minimum);
@@ -207,13 +209,13 @@ const buildToolsArray = async () => {
             if (prop.maximum !== undefined) {
               numberSchema = numberSchema.max(prop.maximum);
             }
-            
+
             paramSchema[key] = numberSchema;
           } else if (prop.type === "boolean") {
             paramSchema[key] = z.boolean();
           } else if (prop.type === "array") {
 
-             continue;  // *todo* define/test array types
+            continue;  // *todo* define/test array types
 
             // Handle arrays with improved item type handling
             if (prop.items && prop.items.type === "string") {
@@ -225,7 +227,7 @@ const buildToolsArray = async () => {
             } else {
               paramSchema[key] = z.array(z.any());
             }
-            
+
             // Add min/max items constraints if specified
             if (prop.minItems !== undefined) {
               paramSchema[key] = paramSchema[key].min(prop.minItems);
@@ -240,7 +242,7 @@ const buildToolsArray = async () => {
             // Default to any
             paramSchema[key] = z.any();
           }
-          
+
           // Add description, combining with example if available
           let description = prop.description || "";
           if (prop.example !== undefined) {
@@ -249,12 +251,12 @@ const buildToolsArray = async () => {
           if (description) {
             paramSchema[key] = paramSchema[key].describe(description);
           }
-          
+
           // Add default value if specified
           if (prop.default !== undefined) {
             paramSchema[key] = paramSchema[key].default(prop.default);
           }
-          
+
           // Handle required fields
           if ((schema.required && !schema.required.includes(key)) || schema.required === undefined) {
             paramSchema[key] = z.optional(paramSchema[key]);
@@ -265,18 +267,18 @@ const buildToolsArray = async () => {
 
       // Add tool definition to array
       tools.push({
-        id: endpointId,
+        id: endpointId.replace("/", "___"),  // / seems to be a problem in the tool id
         paramSchema: paramSchema,
         description: schema.description || `Tool for ${endpointId}`,
         schema: schema
       });
-      
+
       console.error(`✅ Successfully prepared tool definition for ${endpointId}`);
     } catch (error) {
       console.error(`Failed to prepare tool definition for ${endpointId}:`, error);
     }
   }
-  
+
   return tools;
 };
 
@@ -285,7 +287,7 @@ const registerTools = (toolsArray) => {
   for (const tool of toolsArray) {
     try {
       console.error(`Registering tool for ${tool.id}...`);
-      
+
       // Register the tool with the server
       server.tool(
         tool.id,
@@ -295,25 +297,25 @@ const registerTools = (toolsArray) => {
           try {
             const result = await callEndpoint(tool.id, args);
             return {
-              content: [{ 
-                type: "text", 
-                text: JSON.stringify(result, null, 2) 
+              content: [{
+                type: "text",
+                text: JSON.stringify(result, null, 2)
               }]
             };
           } catch (error) {
             return {
-              content: [{ 
-                type: "text", 
-                text: `Error: ${error.message}` 
+              content: [{
+                type: "text",
+                text: `Error: ${error.message}`
               }],
               isError: true
             };
           }
         }
       );
-      
+
       console.error(`✅ Successfully registered tool for ${tool.id}`);
-       if (isDebugMode()) console.error("schema", tool.schema);
+      if (isDebugMode()) console.error("schema", tool.schema);
     } catch (error) {
       console.error(`Failed to register tool for ${tool.id}:`, error);
     }
@@ -331,11 +333,11 @@ const start = async () => {
   try {
     // Set up all tools
     await setupTools();
-      // Start the server with stdio transport
+    // Start the server with stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
-    
+
     // Display debug mode status
     console.error(`Debug mode: ${isDebugMode() ? 'ENABLED' : 'DISABLED'}`);
     console.error("MCP Server started and ready for connections");
