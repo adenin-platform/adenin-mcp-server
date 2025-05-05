@@ -133,6 +133,19 @@ async function fetchSchema(endpointId) {
 // Helper function to call an endpoint
 async function callEndpoint(endpointId, args) {
   let endpoint = endpointId.replace("___", "/"); // Replace ___ with / for the actual endpoint ID
+
+  /*
+  return {
+    content: [{
+      "type": "resource",
+      "resource": {
+        "uri": "resource://example-markdown",
+        "mimeType": "text/markdown",
+        "text": "# Markdown Heading\n\nThis is a paragraph with **bold** and *italic* text."
+      }}]
+  }
+*/
+
   try {
     const response = await fetch(`https://${host}/api/mcp/proxy/${endpoint}`, {
       method: 'POST',
@@ -148,14 +161,24 @@ async function callEndpoint(endpointId, args) {
       throw new Error(`API call failed: ${response.statusText}`);
     }
 
+
     const jsonResponse = await response.json();
+    let json = jsonResponse.Data || jsonResponse;
+    let isError = jsonResponse.ErrorCode == undefined && jsonResponse.ErrorCode !== 0;
 
     // Log JSON responses when debug mode is enabled
     if (isDebugMode()) {
       console.error(`Response from ${endpointId}:`, JSON.stringify(jsonResponse, null, 2));
     }
 
-    return jsonResponse;
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(json, null, 2)
+      }],
+      isError
+    };
+
   } catch (error) {
     console.error(`Error calling endpoint ${endpointId}:`, error.message);
     throw error;
@@ -296,12 +319,7 @@ const registerTools = (toolsArray) => {
         async (args) => {
           try {
             const result = await callEndpoint(tool.id, args);
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify(result, null, 2)
-              }]
-            };
+            return result;
           } catch (error) {
             return {
               content: [{
