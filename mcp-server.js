@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
+import fs from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+import { config } from "dotenv";
+import fetch from "node-fetch";
+import { z } from "zod";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import fetch from "node-fetch";
-import { config } from "dotenv";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import fs from "fs";
 
 // Determine the directory of the current file
 const __filename = fileURLToPath(import.meta.url);
@@ -106,7 +108,8 @@ async function fetchSchema(endpointId) {
   }
 
   try {
-    const response = await fetch(`https://${host}/api/mcp/schema/${endpointId}`, {
+    const endpointParts = endpointId.split(':');
+    const response = await fetch(`https://${host}/api/mcp/schema/${endpointParts[1]}/${endpointParts[2]}`, {
       headers: {
         'Authorization': `Bearer ${bearerToken}`,
         'Accept': 'application/json'
@@ -132,7 +135,9 @@ async function fetchSchema(endpointId) {
 
 // Helper function to call an endpoint
 async function callEndpoint(endpointId, args) {
-  let endpoint = endpointId.replace("___", "/"); // Replace ___ with / for the actual endpoint ID
+  const parts = endpointId.split(':');
+  let endpoint = `${parts[1]}/${parts[2]}`; // Extract the endpoint from the ID
+  // let endpoint = endpointId.replace("___", "/"); // Replace ___ with / for the actual endpoint ID
 
   /*
   return {
@@ -310,10 +315,10 @@ const registerTools = (toolsArray) => {
   for (const tool of toolsArray) {
     try {
       console.error(`Registering tool for ${tool.id}...`);
-
+      
       // Register the tool with the server
       server.tool(
-        tool.id,
+        tool.id.replaceAll(':', '-'),
         tool.description,
         tool.paramSchema,
         async (args) => {
